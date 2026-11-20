@@ -1,131 +1,375 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 
-type Role = 'Practice Administrator' | 'Physician' | 'Nurse' | 'Care Coordinator' | 'Referral Partner' | 'System Administrator';
-type Module = 'Dashboard' | 'Patients' | 'Care Coordination' | 'Referrals' | 'Chronic Care' | 'Patient Engagement' | 'Financial Health' | 'Analytics' | 'Administration' | 'Audit History';
-type Patient = { id: string; dbId?: string; name: string; initials: string; age: number; zip: string; conditions: string[]; risk: 'High' | 'Moderate' | 'Low'; last: string; next: string; gaps: number; referral: string; coordinator: string; balance: number; phone: string };
-type Task = { id: string; title: string; patient: string; patientId?: string; category: string; priority: 'High' | 'Medium' | 'Low'; assignee: string; assigneeId?: string; due: string; status: string };
-type Referral = { id: string; patient: string; patientId?: string; specialty: string; status: string; priority: string; updated: string; owner: string };
+type Role = "Practice Administrator" | "Physician" | "Nurse" | "Care Coordinator" | "Referral Partner" | "System Administrator";
+type Module = "Dashboard" | "Patients" | "Care Coordination" | "Referrals" | "Chronic Care" | "Patient Engagement" | "Financial Health" | "Analytics" | "Administration" | "Audit History";
+type Patient = { id: string; externalId: string; name: string; initials: string; age: number; zip: string; conditions: string[]; risk: string; last: string; next: string; gaps: number; referral: string; coordinator: string; balance: number; phone: string; email?: string; preferredChannel: string; consent: boolean };
+type Task = { id: string; externalId: string; title: string; patient: string; patientId: string; category: string; priority: string; assignee: string; assigneeId: string; dueDate: string; status: string; description?: string };
+type Referral = { id: string; externalId: string; patient: string; patientId: string; specialty: string; reason: string; status: string; priority: string; updated: string; owner: string; notes?: string };
+type CarePlan = { id: string; condition: string; status: string; reviewDate: string; goals: string[]; activities: string[]; patient: string; patientId: string };
+type Communication = { id: string; channel: string; template: string; status: string; content: string; patient: string; patientId: string; createdAt: string };
+type Transaction = { id: string; kind: string; amount: number; status: string; reference: string; patient: string; patientId: string; createdAt: string };
 type Activity = { id: string; action: string; detail: string; time: string; tone: string };
+type DemoUser = { id: string; name: string; role: string };
+type FormKind = "patient" | "task" | "referral" | "carePlan" | "communication" | "payment";
+type DialogState = { kind: FormKind; record?: any; patientId?: string } | null;
 
-const seedPatients: Patient[] = [
-  { id: 'RC-10482', name: 'Evelyn Carter', initials: 'EC', age: 72, zip: '59047', conditions: ['Diabetes', 'Hypertension', 'CKD'], risk: 'High', last: 'Oct 18, 2026', next: 'Overdue', gaps: 3, referral: 'Cardiology · Sent', coordinator: 'Maya Patel', balance: 284, phone: '(406) 555-0142' },
-  { id: 'RC-10931', name: 'James Williams', initials: 'JW', age: 67, zip: '59068', conditions: ['COPD', 'Hypertension'], risk: 'High', last: 'Nov 02, 2026', next: 'Nov 22, 2026', gaps: 1, referral: 'None', coordinator: 'Jordan Lee', balance: 0, phone: '(406) 555-0190' },
-  { id: 'RC-10077', name: 'Maria Rodriguez', initials: 'MR', age: 58, zip: '59034', conditions: ['Diabetes'], risk: 'Moderate', last: 'Nov 08, 2026', next: 'Dec 02, 2026', gaps: 2, referral: 'Endocrinology · Scheduled', coordinator: 'Maya Patel', balance: 96, phone: '(406) 555-0127' },
-  { id: 'RC-10244', name: 'Robert Johnson', initials: 'RJ', age: 81, zip: '59011', conditions: ['Heart failure', 'Diabetes'], risk: 'High', last: 'Sep 29, 2026', next: 'Overdue', gaps: 4, referral: 'Cardiology · Feedback due', coordinator: 'Jordan Lee', balance: 412, phone: '(406) 555-0181' },
-  { id: 'RC-10712', name: 'Linda Nguyen', initials: 'LN', age: 49, zip: '59001', conditions: ['Behavioral health'], risk: 'Moderate', last: 'Nov 12, 2026', next: 'Dec 12, 2026', gaps: 1, referral: 'Behavioral Health · Received', coordinator: 'Maya Patel', balance: 0, phone: '(406) 555-0165' },
-  { id: 'RC-11103', name: 'Thomas Brown', initials: 'TB', age: 39, zip: '59083', conditions: ['Hypertension'], risk: 'Low', last: 'Nov 15, 2026', next: 'Jan 15, 2027', gaps: 0, referral: 'None', coordinator: 'Jordan Lee', balance: 32, phone: '(406) 555-0108' }
-];
-const seedTasks: Task[] = [
-  { id: 'TSK-8821', title: 'Review overdue A1c and renal labs', patient: 'Evelyn Carter', category: 'Chronic disease follow-up', priority: 'High', assignee: 'Maya Patel', due: 'Today', status: 'In Progress' },
-  { id: 'TSK-8819', title: 'Confirm cardiology appointment', patient: 'Robert Johnson', category: 'Referral coordination', priority: 'High', assignee: 'Jordan Lee', due: 'Today', status: 'Waiting for Specialist' },
-  { id: 'TSK-8812', title: 'Missed appointment outreach', patient: 'James Williams', category: 'Patient outreach', priority: 'Medium', assignee: 'Maya Patel', due: 'Tomorrow', status: 'New' },
-  { id: 'TSK-8808', title: 'Review behavioral health feedback', patient: 'Linda Nguyen', category: 'Specialist feedback', priority: 'Medium', assignee: 'Dr. Sarah Kim', due: 'Nov 24', status: 'Assigned' },
-  { id: 'TSK-8794', title: 'Patient responsibility follow-up', patient: 'Maria Rodriguez', category: 'Administrative follow-up', priority: 'Low', assignee: 'Jordan Lee', due: 'Nov 25', status: 'New' }
-];
-const seedReferrals: Referral[] = [
-  { id: 'REF-2107', patient: 'Evelyn Carter', specialty: 'Cardiology', status: 'Sent', priority: 'Urgent', updated: '2 hours ago', owner: 'Maya Patel' },
-  { id: 'REF-2103', patient: 'Robert Johnson', specialty: 'Cardiology', status: 'Feedback Received', priority: 'Routine', updated: 'Yesterday', owner: 'Jordan Lee' },
-  { id: 'REF-2098', patient: 'Maria Rodriguez', specialty: 'Endocrinology', status: 'Appointment Scheduled', priority: 'Routine', updated: 'Nov 18', owner: 'Maya Patel' },
-  { id: 'REF-2091', patient: 'Linda Nguyen', specialty: 'Behavioral Health', status: 'Received', priority: 'Routine', updated: 'Nov 17', owner: 'Jordan Lee' },
-  { id: 'REF-2077', patient: 'James Williams', specialty: 'Pulmonology', status: 'Patient Unreachable', priority: 'Urgent', updated: 'Nov 12', owner: 'Maya Patel' }
-];
-const seedActivity: Activity[] = [
-  { id: '1', action: 'Referral transmitted', detail: 'Evelyn Carter · Cardiology', time: '12 minutes ago', tone: 'purple' },
-  { id: '2', action: 'Care gap identified', detail: 'Robert Johnson · A1c overdue', time: '38 minutes ago', tone: 'yellow' },
-  { id: '3', action: 'Patient outreach delivered', detail: 'Maria Rodriguez · SMS reminder', time: '1 hour ago', tone: 'blue' },
-  { id: '4', action: 'Task escalated', detail: 'James Williams · missed appointment', time: '2 hours ago', tone: 'pink' }
-];
+const modules: Module[] = ["Dashboard", "Patients", "Care Coordination", "Referrals", "Chronic Care", "Patient Engagement", "Financial Health", "Analytics", "Administration", "Audit History"];
+const roles: Role[] = ["Practice Administrator", "Physician", "Nurse", "Care Coordinator", "Referral Partner", "System Administrator"];
+const moduleIcon: Record<Module, string> = { Dashboard: "⌂", Patients: "◉", "Care Coordination": "✓", Referrals: "↗", "Chronic Care": "♡", "Patient Engagement": "✉", "Financial Health": "$", Analytics: "▥", Administration: "⚙", "Audit History": "◷" };
 
-const roles: Role[] = ['Practice Administrator', 'Physician', 'Nurse', 'Care Coordinator', 'Referral Partner', 'System Administrator'];
-const modules: Module[] = ['Dashboard', 'Patients', 'Care Coordination', 'Referrals', 'Chronic Care', 'Patient Engagement', 'Financial Health', 'Analytics', 'Administration', 'Audit History'];
-const icon: Record<Module, string> = { Dashboard: '⌂', Patients: '◉', 'Care Coordination': '✓', Referrals: '↗', 'Chronic Care': '♡', 'Patient Engagement': '✉', 'Financial Health': '$', Analytics: '▥', Administration: '⚙', 'Audit History': '◷' };
-
-function Pill({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: string }) { return <span className={`pill ${tone}`}>{children}</span>; }
-function initials(name: string) { return name.split(' ').map(x => x[0]).join('').slice(0, 2); }
-function fromJson(value: string | null | undefined) { try { return value ? JSON.parse(value) : []; } catch { return []; } }
-function mapPatient(p: any): Patient { return { id: p.externalId ?? p.id, dbId: p.id, name: p.name, initials: p.initials ?? initials(p.name), age: p.age, zip: p.zip, conditions: Array.isArray(p.conditions) ? p.conditions : fromJson(p.conditions), risk: p.risk, last: p.lastEncounter ?? 'Not seen', next: p.nextAppointment ?? 'Not scheduled', gaps: p.carePlans?.filter((x: any) => x.status !== 'Completed').length ?? 0, referral: p.referrals?.[0] ? `${p.referrals[0].specialty} · ${p.referrals[0].status}` : 'None', coordinator: p.tasks?.[0]?.assignee?.name ?? 'Unassigned', balance: p.balance ?? 0, phone: p.phone }; }
-function mapTask(t: any): Task { return { id: t.id ?? t.externalId, title: t.title, patient: t.patient?.name ?? t.patient, patientId: t.patientId, category: t.category, priority: t.priority, assignee: t.assignee?.name ?? t.assignee ?? 'Unassigned', assigneeId: t.assigneeId, due: t.dueDate ? new Date(t.dueDate).toLocaleDateString() : 'No due date', status: t.status }; }
-function mapReferral(r: any): Referral { return { id: r.id ?? r.externalId, patient: r.patient?.name ?? r.patient, patientId: r.patientId, specialty: r.specialty, status: r.status, priority: r.priority, updated: r.updatedAt ? new Date(r.updatedAt).toLocaleDateString() : 'Just now', owner: r.owner }; }
-function mapActivity(a: any): Activity { return { id: a.id, action: a.action, detail: a.detail, time: a.createdAt ? new Date(a.createdAt).toLocaleString() : 'Just now', tone: a.action.toLowerCase().includes('task') ? 'blue' : a.action.toLowerCase().includes('referral') ? 'purple' : 'yellow' }; }
+function listValue(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value !== "string" || !value) return [];
+  try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed.map(String) : [value]; } catch { return value.split(",").map((x) => x.trim()).filter(Boolean); }
+}
+function dateLabel(value?: string | Date | null) {
+  if (!value) return "Not scheduled";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString();
+}
+function dateInput(value?: string | Date | null) {
+  if (!value) return "";
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
+}
+function mapPatient(p: any): Patient {
+  return {
+    id: p.id, externalId: p.externalId, name: p.name, initials: p.initials || p.name.split(" ").map((part: string) => part[0]).join(""),
+    age: p.age, zip: p.zip, phone: p.phone, email: p.email || "", conditions: listValue(p.conditions), risk: p.risk,
+    last: p.lastEncounter || "Not seen", next: p.nextAppointment || "Not scheduled",
+    gaps: p.carePlans?.filter((plan: any) => plan.status !== "Completed").length || 0,
+    referral: p.referrals?.[0] ? p.referrals[0].specialty + " · " + p.referrals[0].status : "None",
+    coordinator: p.tasks?.[0]?.assignee?.name || "Unassigned", balance: Number(p.balance || 0),
+    preferredChannel: p.preferredChannel || "SMS", consent: p.consent !== false
+  };
+}
+function mapTask(t: any): Task {
+  return { id: t.id, externalId: t.externalId, title: t.title, patient: t.patient?.name || "Patient", patientId: t.patientId, category: t.category, priority: t.priority, assignee: t.assignee?.name || "Unassigned", assigneeId: t.assigneeId || "", dueDate: t.dueDate || "", status: t.status, description: t.description || "" };
+}
+function mapReferral(r: any): Referral {
+  return { id: r.id, externalId: r.externalId, patient: r.patient?.name || "Patient", patientId: r.patientId, specialty: r.specialty, reason: r.reason, status: r.status, priority: r.priority, updated: dateLabel(r.updatedAt), owner: r.owner, notes: r.notes || "" };
+}
+function mapPlan(p: any): CarePlan {
+  return { id: p.id, condition: p.condition, status: p.status, reviewDate: p.reviewDate || "", goals: listValue(p.goals), activities: listValue(p.activities), patient: p.patient?.name || "Patient", patientId: p.patientId };
+}
+function mapCommunication(c: any): Communication {
+  return { id: c.id, channel: c.channel, template: c.template, status: c.status, content: c.content, patient: c.patient?.name || "Patient", patientId: c.patientId, createdAt: c.createdAt };
+}
+function mapTransaction(t: any): Transaction {
+  return { id: t.id, kind: t.kind, amount: Number(t.amount), status: t.status, reference: t.reference, patient: t.patient?.name || "Patient", patientId: t.patientId, createdAt: t.createdAt };
+}
+function mapActivity(a: any): Activity {
+  const action = a.action || "Activity";
+  return { id: a.id, action, detail: a.detail, time: dateLabel(a.createdAt), tone: action.toLowerCase().includes("task") ? "blue" : action.toLowerCase().includes("referral") ? "purple" : "yellow" };
+}
+function Pill({ children, tone = "neutral" }: { children: React.ReactNode; tone?: string }) {
+  return <span className={"pill " + tone}>{children}</span>;
+}
+function PageTitle({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: React.ReactNode }) {
+  return <div className="page-title"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1><p>{description}</p></div>{action}</div>;
+}
 
 export default function Home() {
-  const [role, setRole] = useState<Role>('Practice Administrator');
-  const [active, setActive] = useState<Module>('Dashboard');
-  const [patients, setPatients] = useState(seedPatients);
-  const [tasks, setTasks] = useState(seedTasks);
-  const [referrals, setReferrals] = useState(seedReferrals);
-  const [activity, setActivity] = useState(seedActivity);
-  const [query, setQuery] = useState('');
-  const [toast, setToast] = useState('');
+  const [role, setRole] = useState<Role>("Practice Administrator");
+  const [active, setActive] = useState<Module>("Dashboard");
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [referrals, setReferrals] = useState<Referral[]>([]);
+  const [carePlans, setCarePlans] = useState<CarePlan[]>([]);
+  const [communications, setCommunications] = useState<Communication[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [activity, setActivity] = useState<Activity[]>([]);
+  const [users, setUsers] = useState<DemoUser[]>([]);
+  const [query, setQuery] = useState("");
+  const [toast, setToast] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
-  const [taskFilter, setTaskFilter] = useState('All');
+  const [taskFilter, setTaskFilter] = useState("All");
+  const [dialog, setDialog] = useState<DialogState>(null);
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => { fetch('/api/bootstrap').then(r => r.json()).then(d => { if (d.patients) { setPatients(d.patients.map(mapPatient)); setTasks(d.tasks.map(mapTask)); setReferrals(d.referrals.map(mapReferral)); setActivity(d.activity.map(mapActivity)); } }).catch(() => { const saved = localStorage.getItem('ruralcare-demo'); if (saved) { try { const d = JSON.parse(saved); setPatients(d.patients); setTasks(d.tasks); setReferrals(d.referrals); setActivity(d.activity); } catch { /* use seed */ } } }); }, []);
-  useEffect(() => { if (!toast) return; const id = setTimeout(() => setToast(''), 2800); return () => clearTimeout(id); }, [toast]);
-
-  const filteredPatients = useMemo(() => patients.filter(p => `${p.name} ${p.id} ${p.conditions.join(' ')}`.toLowerCase().includes(query.toLowerCase())), [patients, query]);
-  const overdue = tasks.filter(t => t.due === 'Today' && t.status !== 'Completed').length;
-  const highRisk = patients.filter(p => p.risk === 'High').length;
-  const openRefs = referrals.filter(r => !['Closed', 'Feedback Received'].includes(r.status)).length;
   const notify = (message: string) => setToast(message);
-  const addActivity = (action: string, detail: string, tone = 'purple') => setActivity(a => [{ id: crypto.randomUUID(), action, detail, time: 'Just now', tone }, ...a]);
-  const completeTask = (id: string) => { const t = tasks.find(x => x.id === id); fetch(`/api/tasks/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'Completed' }) }).then(r => r.json()).then(saved => setTasks(v => v.map(x => x.id === id ? mapTask(saved) : x))).catch(() => setTasks(v => v.map(x => x.id === id ? { ...x, status: 'Completed' } : x))); if (t) addActivity('Task completed', `${t.patient} · ${t.title}`, 'blue'); notify('Task marked complete'); };
-  const reset = () => { setPatients(seedPatients); setTasks(seedTasks); setReferrals(seedReferrals); setActivity(seedActivity); localStorage.removeItem('ruralcare-demo'); notify('Synthetic demo data restored'); };
-  const createTask = () => { const patient = patients[0]; if (!patient) return; fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'New care coordination follow-up', patientId: patient.dbId ?? patient.id, category: 'Patient outreach', priority: 'Medium' }) }).then(r => r.json()).then(saved => { setTasks(v => [mapTask(saved), ...v]); notify('New task created and saved'); }).catch(() => notify('Could not save task')); };
-  const registerPatient = () => { fetch('/api/patients', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'New Synthetic Patient', age: 45, zip: '59001', phone: '(406) 555-0150', conditions: ['Hypertension'], risk: 'Low' }) }).then(r => r.json()).then(saved => { setPatients(v => [mapPatient(saved), ...v]); notify('Patient registered and saved'); }).catch(() => notify('Could not save patient')); };
-  const advanceReferral = (referral: Referral) => { const next = referral.status === 'Sent' ? 'Received' : referral.status === 'Received' ? 'Appointment Scheduled' : referral.status === 'Appointment Scheduled' ? 'Appointment Completed' : 'Feedback Received'; fetch(`/api/referrals/${referral.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: next }) }).then(r => r.json()).then(saved => { setReferrals(v => v.map(x => x.id === referral.id ? mapReferral(saved) : x)); notify(`Referral moved to ${next}`); }).catch(() => notify('Could not update referral')); };
-  const sendOutreach = (patient: Patient) => { fetch('/api/communications', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ patientId: patient.dbId ?? patient.id, channel: 'SMS', template: 'Care follow-up reminder', content: `Hello ${patient.name}, please contact Montana Rural Health for your follow-up.` }) }).then(r => r.json()).then(() => notify(`Outreach saved for ${patient.name}`)).catch(() => notify('Could not save outreach')); };
-  const recordPayment = (patient: Patient) => { const amount = Math.min(50, patient.balance); if (!amount) return notify('No outstanding balance'); fetch('/api/financial-transactions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ patientId: patient.dbId ?? patient.id, amount, kind: 'Payment', reference: 'SIMULATED' }) }).then(r => r.json()).then(() => { setPatients(v => v.map(x => x.id === patient.id ? { ...x, balance: Math.max(0, x.balance - amount) } : x)); notify(`$${amount.toFixed(2)} payment posted for ${patient.name}`); }).catch(() => notify('Could not post payment')); };
+  const api = async (url: string, method = "GET", body?: unknown): Promise<any> => {
+    const response = await fetch(url, {
+      method,
+      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body)
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || ("Request failed (" + response.status + ")"));
+    return payload;
+  };
+  const refreshData = async () => {
+    const data = await api("/api/bootstrap");
+    const nextPlans = (data.carePlans || []).map(mapPlan);
+    const nextReferrals = (data.referrals || []).map(mapReferral);
+    const nextPatients = (data.patients || []).map(mapPatient);
+    for (const patient of nextPatients) {
+      patient.gaps = nextPlans.filter((plan: CarePlan) => plan.patientId === patient.id && plan.status !== "Completed").length;
+      const ref = nextReferrals.find((item: Referral) => item.patientId === patient.id);
+      patient.referral = ref ? ref.specialty + " · " + ref.status : "None";
+    }
+    setPatients(nextPatients);
+    setTasks((data.tasks || []).map(mapTask));
+    setReferrals(nextReferrals);
+    setCarePlans(nextPlans);
+    setCommunications((data.communications || []).map(mapCommunication));
+    setTransactions((data.transactions || []).map(mapTransaction));
+    setActivity((data.activity || []).map(mapActivity));
+    setUsers(data.users || []);
+    setLoadError("");
+  };
+
+  useEffect(() => {
+    refreshData().catch((error) => setLoadError(error.message || "Unable to load the database. Check DATABASE_URL and the deployment logs.")).finally(() => setLoading(false));
+  }, []);
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(""), 3200);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  const filteredPatients = useMemo(() => patients.filter((patient) => (patient.name + " " + patient.externalId + " " + patient.conditions.join(" ")).toLowerCase().includes(query.toLowerCase())), [patients, query]);
+  const highRisk = patients.filter((patient) => patient.risk === "High").length;
+  const overdue = tasks.filter((task) => task.status !== "Completed" && ((task.dueDate && new Date(task.dueDate) < new Date()) || task.status === "New")).length;
+  const openRefs = referrals.filter((referral) => !["Closed", "Feedback Received"].includes(referral.status)).length;
+  const totalBalance = patients.reduce((sum, patient) => sum + patient.balance, 0);
+
+  const openDialog = (kind: FormKind, record?: any, patientId?: string) => setDialog({ kind, record, patientId });
+  const deleteRecord = async (kind: string, id: string, label: string) => {
+    if (!window.confirm("Delete " + label + "? This also removes related child records where applicable.")) return;
+    const endpoints: Record<string, string> = { patient: "patients", task: "tasks", referral: "referrals", carePlan: "care-plans", communication: "communications", payment: "financial-transactions" };
+    try {
+      await api("/api/" + endpoints[kind] + "/" + id, "DELETE");
+      if (selectedPatient?.id === id) setSelectedPatient(null);
+      await refreshData();
+      notify(label + " deleted");
+    } catch (error: any) { notify(error.message || "Delete failed"); }
+  };
+
+  const saveDialog = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!dialog) return;
+    setSaving(true);
+    const values = new FormData(event.currentTarget);
+    const value = (key: string) => String(values.get(key) ?? "").trim();
+    const split = (key: string) => value(key).split(/[,;\n]/).map((item) => item.trim()).filter(Boolean);
+    const editing = Boolean(dialog.record?.id);
+    const id = dialog.record?.id;
+    let endpoint = "";
+    let payload: Record<string, any> = {};
+    try {
+      if (dialog.kind === "patient") {
+        endpoint = "/api/patients";
+        payload = {
+          name: value("name"), age: Number(value("age")), zip: value("zip"), phone: value("phone"),
+          email: value("email"), conditions: split("conditions"), risk: value("risk"),
+          preferredChannel: value("preferredChannel"), consent: values.get("consent") === "on",
+          balance: Number(value("balance") || 0), lastEncounter: value("lastEncounter"), nextAppointment: value("nextAppointment")
+        };
+      } else if (dialog.kind === "task") {
+        endpoint = "/api/tasks";
+        payload = { title: value("title"), patientId: value("patientId"), category: value("category"), priority: value("priority"), assigneeId: value("assigneeId") || null, dueDate: value("dueDate") || undefined, description: value("description") };
+        if (editing) payload.status = value("status");
+      } else if (dialog.kind === "referral") {
+        endpoint = "/api/referrals";
+        payload = { patientId: value("patientId"), specialty: value("specialty"), reason: value("reason"), priority: value("priority"), owner: value("owner"), notes: value("notes") };
+        if (editing) payload.status = value("status");
+      } else if (dialog.kind === "carePlan") {
+        endpoint = "/api/care-plans";
+        payload = { patientId: value("patientId"), condition: value("condition"), goals: split("goals"), activities: split("activities"), reviewDate: value("reviewDate") || undefined };
+        if (editing) payload.status = value("status");
+      } else if (dialog.kind === "communication") {
+        endpoint = "/api/communications";
+        payload = { patientId: value("patientId"), channel: value("channel"), template: value("template"), content: value("content") };
+        if (editing) payload.status = value("status");
+      } else if (dialog.kind === "payment") {
+        endpoint = "/api/financial-transactions";
+        payload = { patientId: value("patientId"), amount: Number(value("amount")), kind: "Payment", reference: value("reference") || "DEMO-" + Date.now() };
+      }
+      await api(editing ? endpoint + "/" + id : endpoint, editing ? "PATCH" : "POST", payload);
+      setDialog(null);
+      setSelectedPatient(null);
+      await refreshData();
+      notify(editing ? "Changes saved to the database" : "Record created and saved to the database");
+    } catch (error: any) {
+      notify(error.message || "Could not save this record");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const completeTask = async (task: Task) => {
+    try {
+      await api("/api/tasks/" + task.id, "PATCH", { status: "Completed" });
+      await refreshData();
+      notify("Task completed and saved");
+    } catch (error: any) { notify(error.message || "Could not update task"); }
+  };
+  const advanceReferral = async (referral: Referral) => {
+    const stages = ["Draft", "Sent", "Received", "Appointment Scheduled", "Appointment Completed", "Feedback Received"];
+    const next = stages[Math.max(0, stages.indexOf(referral.status) + 1)] || "Closed";
+    try {
+      await api("/api/referrals/" + referral.id, "PATCH", { status: next });
+      await refreshData();
+      notify("Referral moved to " + next);
+    } catch (error: any) { notify(error.message || "Could not update referral"); }
+  };
+  const resetDemo = async () => {
+    if (!window.confirm("Restore the synthetic demo dataset? This will replace records currently in this demo database.")) return;
+    try {
+      await api("/api/demo/reset", "POST", {});
+      await refreshData();
+      notify("Synthetic demo data restored");
+    } catch (error: any) { notify(error.message || "Could not reset demo data"); }
+  };
+  const updateTransaction = async (transaction: Transaction, status: string) => {
+    try {
+      await api("/api/financial-transactions/" + transaction.id, "PATCH", { status });
+      await refreshData();
+      notify("Payment status changed to " + status);
+    } catch (error: any) { notify(error.message || "Could not update payment"); }
+  };
+
+  const renderPatientRows = (rows: Patient[]) => rows.map((patient) => (
+    <tr key={patient.id}>
+      <td><button className="table-link" onClick={() => setSelectedPatient(patient)}><strong>{patient.name}</strong><small>{patient.externalId} · Age {patient.age} · {patient.zip}</small></button></td>
+      <td><Pill tone={patient.risk.toLowerCase()}>{patient.risk}</Pill></td>
+      <td>{patient.conditions.join(", ")}</td>
+      <td>{patient.last}</td>
+      <td>{patient.next === "Overdue" ? <Pill tone="high">{patient.gaps} open care plans</Pill> : patient.next}</td>
+      <td>{patient.referral}</td>
+      <td><button className="small-action" disabled={!patient.consent} onClick={() => openDialog("communication", undefined, patient.id)}>Message</button></td>
+    </tr>
+  ));
 
   return <main className="app-shell">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark">✦</div><div><strong>RuralCare</strong><span>CONNECT</span></div></div>
       <div className="practice-switch"><span className="status-dot" /> Montana Rural Health <span className="chevron">⌄</span></div>
-      <nav>{modules.map(m => <button key={m} className={active === m ? 'nav-item active' : 'nav-item'} onClick={() => setActive(m)}><span className="nav-icon">{icon[m]}</span>{m}{m === 'Care Coordination' && <em>{overdue}</em>}</button>)}</nav>
-      <div className="sidebar-bottom"><div className="sync"><span className="sync-dot" /> Synthetic data synced<br /><small>Last updated just now</small></div><button className="reset-link" onClick={reset}>↻ Reset demo data</button><div className="user-card"><div className="avatar purple">PA</div><div><strong>Priya Anand</strong><small>{role}</small></div><span>⋮</span></div></div>
+      <nav>{modules.map((module) => <button key={module} className={active === module ? "nav-item active" : "nav-item"} onClick={() => setActive(module)}><span className="nav-icon">{moduleIcon[module]}</span>{module}{module === "Care Coordination" && <em>{overdue}</em>}</button>)}</nav>
+      <div className="sidebar-bottom">
+        <div className="sync"><span className="sync-dot" /> Database connected<br /><small>{loading ? "Loading records…" : patients.length + " synthetic patients loaded"}</small></div>
+        <button className="reset-link" onClick={resetDemo}>↻ Reset demo data</button>
+        <div className="user-card"><div className="avatar purple">PA</div><div><strong>Priya Anand</strong><small>{role}</small></div><span>⋮</span></div>
+      </div>
     </aside>
     <section className="workspace">
-      <header className="topbar"><div className="global-search"><span>⌕</span><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search patients, tasks, referrals..." /><kbd>⌘ K</kbd></div><div className="top-actions"><button className="icon-button">?</button><button className="icon-button notification">♧<i /></button><div className="role-select"><label>Demo role</label><select value={role} onChange={e => { setRole(e.target.value as Role); notify(`Viewing as ${e.target.value}`); }}>{roles.map(r => <option key={r}>{r}</option>)}</select></div></div></header>
+      <header className="topbar">
+        <div className="global-search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search patients, tasks, referrals…" /><kbd>⌘ K</kbd></div>
+        <div className="top-actions"><div className="role-select"><label>Demo role</label><select value={role} onChange={(event) => setRole(event.target.value as Role)}>{roles.map((item) => <option key={item}>{item}</option>)}</select></div></div>
+      </header>
       <div className="content">
-        {active === 'Dashboard' && <Dashboard patients={patients} tasks={tasks} referrals={referrals} activity={activity} highRisk={highRisk} openRefs={openRefs} overdue={overdue} onOpenPatient={setSelectedPatient} onCompleteTask={completeTask} onCreateTask={createTask} />}
-        {active === 'Patients' && <Patients patients={filteredPatients} onOpen={setSelectedPatient} onAdd={registerPatient} />} 
-        {active === 'Care Coordination' && <Tasks tasks={tasks} filter={taskFilter} setFilter={setTaskFilter} onComplete={completeTask} onCreate={createTask} />}
-        {active === 'Referrals' && <Referrals referrals={referrals} setReferrals={setReferrals} onNotify={notify} onActivity={addActivity} onAdvance={advanceReferral} />}
-        {active === 'Chronic Care' && <Chronic patients={patients} onNotify={notify} />}
-        {active === 'Patient Engagement' && <Engagement patients={patients} onNotify={notify} onActivity={addActivity} onSend={sendOutreach} />}
-        {active === 'Financial Health' && <Finance patients={patients} onNotify={notify} onPayment={recordPayment} />}
-        {active === 'Analytics' && <Analytics patients={patients} tasks={tasks} referrals={referrals} />}
-        {active === 'Administration' && <Administration onReset={reset} onNotify={notify} />}
-        {active === 'Audit History' && <Audit activity={activity} />}
+        {loadError && <section className="panel error-panel"><strong>Database connection failed</strong><p>{loadError}</p><button className="secondary-button" onClick={() => { setLoading(true); refreshData().catch((error) => setLoadError(error.message)).finally(() => setLoading(false)); }}>Retry connection</button></section>}
+        {loading && <section className="panel"><p>Connecting to the RuralCare Connect database and loading synthetic demo records…</p></section>}
+
+        {!loading && !loadError && active === "Dashboard" && <>
+          <PageTitle eyebrow="Practice operations" title="Good morning, Priya" description="A live view of patient access, care coordination and practice activity." action={<button className="primary-button" onClick={() => openDialog("task")}>＋ Create task</button>} />
+          <div className="stat-grid">
+            <div className="stat-card purple"><div className="stat-top"><span>Patients in registry</span><b>◉</b></div><strong>{patients.length}</strong><small>Persisted records</small></div>
+            <div className="stat-card pink"><div className="stat-top"><span>High-risk patients</span><b>⌁</b></div><strong>{highRisk}</strong><small>Require closer follow-up</small></div>
+            <div className="stat-card blue"><div className="stat-top"><span>Open referrals</span><b>↗</b></div><strong>{openRefs}</strong><small>Closed-loop workflow</small></div>
+            <div className="stat-card yellow"><div className="stat-top"><span>Open tasks</span><b>✓</b></div><strong>{tasks.filter((item) => item.status !== "Completed").length}</strong><small>{overdue} need attention</small></div>
+          </div>
+          <div className="dashboard-grid">
+            <section className="panel"><div className="panel-heading"><div><h2>Priority patients</h2><p>Click a patient to open Patient 360</p></div><button className="link-button" onClick={() => setActive("Patients")}>All patients →</button></div>
+              <table className="wide-table"><thead><tr><th>Patient</th><th>Risk</th><th>Conditions</th><th>Balance</th><th>Action</th></tr></thead><tbody>{patients.filter((item) => item.risk === "High").slice(0, 5).map((patient) => <tr key={patient.id}><td><button className="table-link" onClick={() => setSelectedPatient(patient)}><strong>{patient.name}</strong><small>{patient.externalId} · Age {patient.age}</small></button></td><td><Pill tone="high">High</Pill></td><td>{patient.conditions.join(", ")}</td><td>{"$" + patient.balance.toFixed(2)}</td><td><button className="small-action" onClick={() => openDialog("task", undefined, patient.id)}>Create task</button></td></tr>)}</tbody></table>
+            </section>
+            <section className="panel"><div className="panel-heading"><div><h2>Recent activity</h2><p>Persisted audit trail</p></div><button className="link-button" onClick={() => setActive("Audit History")}>View audit →</button></div>
+              <div className="activity-list">{activity.slice(0, 7).map((item) => <div className="activity" key={item.id}><div className={"activity-icon " + item.tone}>✦</div><div><strong>{item.action}</strong><span>{item.detail}</span><small>{item.time}</small></div></div>)}{activity.length === 0 && <p>No activity recorded yet.</p>}</div>
+            </section>
+          </div>
+          <section className="panel task-panel"><div className="panel-heading"><div><h2>Care team queue</h2><p>Complete, edit or delete tasks; all changes are saved to PostgreSQL.</p></div><button className="primary-button" onClick={() => openDialog("task")}>＋ Create task</button></div>
+            <table className="wide-table"><thead><tr><th>Task</th><th>Patient</th><th>Priority</th><th>Assignee</th><th>Due</th><th>Status</th><th>Actions</th></tr></thead><tbody>{tasks.slice(0, 8).map((task) => <tr key={task.id}><td><strong>{task.title}</strong><small>{task.externalId} · {task.category}</small></td><td>{task.patient}</td><td><Pill tone={task.priority.toLowerCase()}>{task.priority}</Pill></td><td>{task.assignee}</td><td>{dateLabel(task.dueDate)}</td><td><Pill tone="blue">{task.status}</Pill></td><td><button className="small-action" onClick={() => openDialog("task", task)}>Edit</button> {task.status !== "Completed" && <button className="small-action" onClick={() => completeTask(task)}>Complete</button>}</td></tr>)}</tbody></table>
+          </section>
+        </>}
+
+        {!loading && !loadError && active === "Patients" && <>
+          <PageTitle eyebrow="Patient registry" title="Patients" description="Create, search, edit and remove synthetic patient records." action={<button className="primary-button" onClick={() => openDialog("patient")}>＋ Add patient</button>} />
+          <section className="panel"><div className="table-summary"><span>{filteredPatients.length} patients shown · changes persist in database</span><button className="link-button" onClick={() => openDialog("patient")}>＋ Add new</button></div>
+            <table className="wide-table"><thead><tr><th>Patient</th><th>Risk</th><th>Conditions</th><th>Last encounter</th><th>Next appointment</th><th>Referral</th><th>Outreach</th></tr></thead><tbody>{renderPatientRows(filteredPatients)}</tbody></table>
+          </section>
+        </>}
+
+        {!loading && !loadError && active === "Care Coordination" && <>
+          <PageTitle eyebrow="Care operations" title="Care team work queue" description="Manage ownership, due dates, priority and workflow status." action={<button className="primary-button" onClick={() => openDialog("task")}>＋ Create task</button>} />
+          <div className="queue-tabs">{["All", "New", "Assigned", "In Progress", "Waiting for Specialist", "Completed"].map((status) => <button className={taskFilter === status ? "selected" : ""} key={status} onClick={() => setTaskFilter(status)}>{status}<span>{status === "All" ? tasks.length : tasks.filter((task) => task.status === status).length}</span></button>)}</div>
+          <section className="panel"><table className="wide-table"><thead><tr><th>Task</th><th>Patient</th><th>Priority</th><th>Assignee</th><th>Due date</th><th>Status</th><th>Actions</th></tr></thead><tbody>{tasks.filter((task) => taskFilter === "All" || task.status === taskFilter).map((task) => <tr key={task.id}><td><strong>{task.title}</strong><small>{task.externalId} · {task.category}</small></td><td>{task.patient}</td><td><Pill tone={task.priority.toLowerCase()}>{task.priority}</Pill></td><td>{task.assignee}</td><td>{dateLabel(task.dueDate)}</td><td><Pill tone="blue">{task.status}</Pill></td><td><button className="small-action" onClick={() => openDialog("task", task)}>Edit</button> {task.status !== "Completed" && <button className="small-action" onClick={() => completeTask(task)}>Complete</button>} <button className="small-action danger-action" onClick={() => deleteRecord("task", task.id, "task")}>Delete</button></td></tr>)}</tbody></table></section>
+        </>}
+
+        {!loading && !loadError && active === "Referrals" && <>
+          <PageTitle eyebrow="Closed-loop coordination" title="Referrals" description="Create and follow each referral from draft to specialist feedback." action={<button className="primary-button" onClick={() => openDialog("referral")}>＋ New referral</button>} />
+          <div className="referral-summary"><div><span>Open referrals</span><strong>{openRefs}</strong></div><div><span>Awaiting feedback</span><strong>{referrals.filter((item) => item.status === "Sent" || item.status === "Received").length}</strong></div><div><span>Appointment scheduled</span><strong>{referrals.filter((item) => item.status === "Appointment Scheduled").length}</strong></div><div><span>Feedback received</span><strong>{referrals.filter((item) => item.status === "Feedback Received").length}</strong></div></div>
+          <section className="panel"><table className="wide-table"><thead><tr><th>Referral</th><th>Specialty</th><th>Reason</th><th>Status</th><th>Priority</th><th>Owner</th><th>Actions</th></tr></thead><tbody>{referrals.map((referral) => <tr key={referral.id}><td><strong>{referral.patient}</strong><small>{referral.externalId}</small></td><td>{referral.specialty}</td><td>{referral.reason}</td><td><Pill tone={referral.status.includes("Feedback") ? "green" : referral.status.includes("Unreachable") ? "high" : "blue"}>{referral.status}</Pill></td><td>{referral.priority}</td><td>{referral.owner}</td><td><button className="small-action" onClick={() => advanceReferral(referral)}>Advance</button> <button className="small-action" onClick={() => openDialog("referral", referral)}>Edit</button> <button className="small-action danger-action" onClick={() => deleteRecord("referral", referral.id, "referral")}>Delete</button></td></tr>)}</tbody></table></section>
+        </>}
+
+        {!loading && !loadError && active === "Chronic Care" && <>
+          <PageTitle eyebrow="Clinical continuity" title="Chronic care plans" description="Create, review and update care plans for synthetic chronic-care workflows." action={<button className="primary-button" onClick={() => openDialog("carePlan")}>＋ Create care plan</button>} />
+          <div className="care-cards">{["Diabetes", "Hypertension", "Cardiovascular disease", "Behavioral health"].map((condition, index) => <div className="care-card" key={condition}><div className="care-symbol">{["◒", "⌁", "♡", "✦"][index]}</div><span>{condition}</span><strong>{carePlans.filter((plan) => plan.condition.toLowerCase().includes(condition.toLowerCase().split(" ")[0]) && plan.status === "Active").length}</strong><small>active care plans</small></div>)}</div>
+          <section className="panel"><div className="table-summary"><span>{carePlans.length} care plans</span><button className="link-button" onClick={() => openDialog("carePlan")}>＋ Add care plan</button></div><table className="wide-table"><thead><tr><th>Patient</th><th>Condition</th><th>Goals</th><th>Activities</th><th>Review date</th><th>Status</th><th>Actions</th></tr></thead><tbody>{carePlans.map((plan) => <tr key={plan.id}><td>{plan.patient}</td><td><strong>{plan.condition}</strong></td><td>{plan.goals.join("; ")}</td><td>{plan.activities.join("; ")}</td><td>{dateLabel(plan.reviewDate)}</td><td><Pill tone={plan.status === "Active" ? "green" : "neutral"}>{plan.status}</Pill></td><td><button className="small-action" onClick={() => openDialog("carePlan", plan)}>Edit</button> {plan.status === "Active" && <button className="small-action" onClick={() => api("/api/care-plans/" + plan.id, "PATCH", { status: "Completed" }).then(refreshData).then(() => notify("Care plan completed")).catch((error) => notify(error.message))}>Complete</button>} <button className="small-action danger-action" onClick={() => deleteRecord("carePlan", plan.id, "care plan")}>Delete</button></td></tr>)}</tbody></table></section>
+        </>}
+
+        {!loading && !loadError && active === "Patient Engagement" && <>
+          <PageTitle eyebrow="Patient connection" title="Patient engagement" description="Compose simulated SMS or voice outreach and review saved communication history." action={<button className="primary-button" onClick={() => openDialog("communication")}>＋ Compose message</button>} />
+          <div className="engagement-top"><div className="metric-block"><span>Messages stored</span><strong>{communications.length}</strong><small>Database records</small></div><div className="metric-block"><span>SMS</span><strong>{communications.filter((item) => item.channel === "SMS").length}</strong><small>Simulated messages</small></div><div className="metric-block"><span>Voice</span><strong>{communications.filter((item) => item.channel === "Voice").length}</strong><small>Simulated calls</small></div><div className="metric-block"><span>Failed</span><strong>{communications.filter((item) => item.status === "Failed").length}</strong><small>Need review</small></div></div>
+          <section className="panel"><div className="panel-heading"><div><h2>Outreach by patient</h2><p>Use Message to open a preselected composer</p></div></div><table className="wide-table"><thead><tr><th>Patient</th><th>Preferred channel</th><th>Consent</th><th>Action</th></tr></thead><tbody>{patients.map((patient) => <tr key={patient.id}><td><strong>{patient.name}</strong><small>{patient.phone}</small></td><td>{patient.preferredChannel}</td><td><Pill tone={patient.consent ? "green" : "high"}>{patient.consent ? "Granted" : "Not recorded"}</Pill></td><td><button className="small-action" disabled={!patient.consent} onClick={() => openDialog("communication", undefined, patient.id)}>Compose message</button></td></tr>)}</tbody></table></section>
+          <section className="panel"><div className="panel-heading"><div><h2>Communication history</h2><p>All entries below are simulated and persisted</p></div></div><table className="wide-table"><thead><tr><th>Patient</th><th>Channel</th><th>Template</th><th>Content</th><th>Status</th><th>Actions</th></tr></thead><tbody>{communications.map((item) => <tr key={item.id}><td>{item.patient}</td><td>{item.channel}</td><td>{item.template}</td><td>{item.content}</td><td><Pill tone={item.status === "Sent" || item.status === "Delivered" ? "green" : "neutral"}>{item.status}</Pill></td><td><button className="small-action" onClick={() => openDialog("communication", item)}>Edit</button> <button className="small-action danger-action" onClick={() => deleteRecord("communication", item.id, "communication")}>Delete</button></td></tr>)}</tbody></table></section>
+        </>}
+
+        {!loading && !loadError && active === "Financial Health" && <>
+          <PageTitle eyebrow="Practice sustainability" title="Financial health" description="Record simulated payments, track patient balances and reverse posted transactions." action={<button className="primary-button" onClick={() => openDialog("payment")}>＋ Record payment</button>} />
+          <div className="finance-grid"><div className="finance-card purple-bg"><span>Outstanding patient balances</span><strong>{"$" + totalBalance.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong><small>Across {patients.filter((patient) => patient.balance > 0).length} patients</small><div className="finance-orb">$</div></div><div className="finance-card"><span>Payments recorded</span><strong>{transactions.length}</strong><small>Persisted simulated transactions</small></div><div className="finance-card"><span>Posted payments</span><strong>{transactions.filter((item) => item.status === "Posted").length}</strong><small>Balances recalculated</small></div></div>
+          <section className="panel"><div className="panel-heading"><div><h2>Patient responsibility</h2><p>Outstanding balance and payment entry</p></div></div><table className="wide-table"><thead><tr><th>Patient</th><th>Balance</th><th>Risk</th><th>Action</th></tr></thead><tbody>{patients.filter((patient) => patient.balance > 0).map((patient) => <tr key={patient.id}><td><strong>{patient.name}</strong><small>{patient.externalId}</small></td><td><strong>{"$" + patient.balance.toFixed(2)}</strong></td><td><Pill tone={patient.balance > 300 ? "high" : "yellow"}>{patient.balance > 300 ? "Follow-up" : "Open"}</Pill></td><td><button className="small-action" onClick={() => openDialog("payment", undefined, patient.id)}>Record payment</button></td></tr>)}</tbody></table></section>
+          <section className="panel"><div className="panel-heading"><div><h2>Transaction history</h2><p>Reversing a posted payment restores the patient balance</p></div></div><table className="wide-table"><thead><tr><th>Patient</th><th>Type</th><th>Amount</th><th>Reference</th><th>Date</th><th>Status</th><th>Actions</th></tr></thead><tbody>{transactions.map((item) => <tr key={item.id}><td>{item.patient}</td><td>{item.kind}</td><td>{"$" + item.amount.toFixed(2)}</td><td>{item.reference}</td><td>{dateLabel(item.createdAt)}</td><td><Pill tone={item.status === "Posted" ? "green" : "neutral"}>{item.status}</Pill></td><td>{item.status === "Posted" && <button className="small-action" onClick={() => updateTransaction(item, "Reversed")}>Reverse</button>} <button className="small-action danger-action" onClick={() => deleteRecord("payment", item.id, "payment transaction")}>Delete</button></td></tr>)}</tbody></table></section>
+        </>}
+
+        {!loading && !loadError && active === "Analytics" && <>
+          <PageTitle eyebrow="Practice intelligence" title="Analytics" description="Metrics are calculated from the current synthetic database records." />
+          <div className="analytics-grid"><div className="analytics-card"><span>Patients</span><strong>{patients.length}</strong><small>Active registry</small></div><div className="analytics-card"><span>Task completion</span><strong>{tasks.length ? Math.round(tasks.filter((item) => item.status === "Completed").length / tasks.length * 100) : 0}%</strong><small>Completed tasks</small></div><div className="analytics-card"><span>Referral closure</span><strong>{referrals.length ? Math.round(referrals.filter((item) => ["Closed", "Feedback Received"].includes(item.status)).length / referrals.length * 100) : 0}%</strong><small>Closed-loop outcomes</small></div><div className="analytics-card"><span>Active care plans</span><strong>{carePlans.filter((item) => item.status === "Active").length}</strong><small>Chronic care</small></div></div>
+          <div className="insight-row"><div className="insight"><span className="insight-icon purple">✦</span><div><strong>{highRisk} high-risk patients</strong><p>Review risk and open tasks in the patient registry.</p></div></div><div className="insight"><span className="insight-icon yellow">!</span><div><strong>{tasks.filter((item) => item.status !== "Completed").length} open tasks</strong><p>Uncompleted coordination work across the team.</p></div></div><div className="insight"><span className="insight-icon blue">↗</span><div><strong>{openRefs} open referrals</strong><p>Referrals still moving through the specialist workflow.</p></div></div></div>
+        </>}
+
+        {!loading && !loadError && active === "Administration" && <>
+          <PageTitle eyebrow="System configuration" title="Administration" description="Demo personas and synthetic environment controls." action={<button className="primary-button" onClick={resetDemo}>↻ Reset demo data</button>} />
+          <div className="admin-grid"><section className="panel"><div className="panel-heading"><div><h2>Demo users</h2><p>Role selector at the top changes the walkthrough persona</p></div></div>{users.map((user) => <div className="admin-row" key={user.id}><div className="avatar soft">{user.name.split(" ").map((part) => part[0]).join("").slice(0, 2)}</div><div><strong>{user.name}</strong><small>{user.role}</small></div><Pill tone="green">Active</Pill></div>)}</section><section className="panel"><div className="panel-heading"><div><h2>Integration simulators</h2><p>No external systems are contacted</p></div></div>{["EHR / FHIR adapter", "Referral document exchange", "SMS / voice provider", "Claims status adapter"].map((label) => <div className="integration-row" key={label}><span className="integration-icon">↗</span><div><strong>{label}</strong><small>Simulated workflow · Synthetic identifiers</small></div><Pill tone="green">Demo mode</Pill></div>)}</section></div>
+        </>}
+
+        {!loading && !loadError && active === "Audit History" && <>
+          <PageTitle eyebrow="Traceability" title="Audit history" description="Database-backed events for create, update, delete and workflow actions." />
+          <section className="panel"><div className="audit-list">{activity.map((item) => <div className="audit-row" key={item.id}><div className={"activity-icon " + item.tone}>✦</div><div><strong>{item.action}</strong><span>{item.detail}</span></div><time>{item.time}</time></div>)}{activity.length === 0 && <p>No audit events recorded.</p>}</div></section>
+        </>}
       </div>
     </section>
-    {selectedPatient && <PatientDrawer patient={selectedPatient} onClose={() => setSelectedPatient(null)} onTask={() => { createTask(); setSelectedPatient(null); }} />}
+
+    {selectedPatient && <div className="drawer-backdrop" onClick={() => setSelectedPatient(null)}><aside className="drawer" onClick={(event) => event.stopPropagation()}>
+      <div className="drawer-head"><span>Patient 360</span><button onClick={() => setSelectedPatient(null)}>×</button></div>
+      <div className="drawer-profile"><div className="avatar large">{selectedPatient.initials}</div><div><h2>{selectedPatient.name}</h2><p>{selectedPatient.externalId} · Age {selectedPatient.age} · ZIP {selectedPatient.zip}</p></div><Pill tone={selectedPatient.risk.toLowerCase()}>{selectedPatient.risk} risk</Pill></div>
+      <div className="drawer-actions"><button className="primary-button" onClick={() => openDialog("task", undefined, selectedPatient.id)}>＋ Create task</button><button className="secondary-button" onClick={() => openDialog("communication", undefined, selectedPatient.id)}>Send outreach</button></div>
+      <div className="drawer-section"><h3>Clinical summary</h3><div className="detail-grid"><span>Conditions<strong>{selectedPatient.conditions.join(", ")}</strong></span><span>Last encounter<strong>{selectedPatient.last}</strong></span><span>Next appointment<strong>{selectedPatient.next}</strong></span><span>Outstanding balance<strong>{"$" + selectedPatient.balance.toFixed(2)}</strong></span><span>Phone<strong>{selectedPatient.phone}</strong></span><span>Email<strong>{selectedPatient.email || "Not recorded"}</strong></span></div></div>
+      <div className="drawer-section"><h3>Patient management</h3><div className="drawer-actions"><button className="secondary-button" onClick={() => openDialog("patient", selectedPatient)}>Edit patient</button><button className="secondary-button danger-action" onClick={() => deleteRecord("patient", selectedPatient.id, "patient")}>Delete patient</button></div></div>
+      <div className="drawer-section"><h3>Related workflows</h3>{carePlans.filter((plan) => plan.patientId === selectedPatient.id).map((plan) => <div className="gap-item" key={plan.id}><span className="gap-icon blue">♡</span><div><strong>{plan.condition} care plan</strong><small>{plan.status}</small></div><button className="small-action" onClick={() => openDialog("carePlan", plan)}>Edit</button></div>)}{referrals.filter((item) => item.patientId === selectedPatient.id).map((item) => <div className="gap-item" key={item.id}><span className="gap-icon blue">↗</span><div><strong>{item.specialty} referral</strong><small>{item.status}</small></div></div>)}
+      </div>
+    </aside></div>}
+
+    {dialog && <div className="dialog-backdrop" onClick={() => !saving && setDialog(null)}><section className="dialog" onClick={(event) => event.stopPropagation()}>
+      <div className="dialog-heading"><div><div className="eyebrow">{dialog.record ? "Update saved record" : "New synthetic record"}</div><h2>{dialog.kind === "patient" ? (dialog.record ? "Edit patient" : "Add patient") : dialog.kind === "task" ? (dialog.record ? "Edit task" : "Create task") : dialog.kind === "referral" ? (dialog.record ? "Edit referral" : "New referral") : dialog.kind === "carePlan" ? (dialog.record ? "Edit care plan" : "Create care plan") : dialog.kind === "communication" ? (dialog.record ? "Edit communication" : "Compose message") : "Record simulated payment"}</h2></div><button className="dialog-close" onClick={() => setDialog(null)}>×</button></div>
+      <form onSubmit={saveDialog}>
+        {dialog.kind === "patient" && <>
+          <div className="form-grid"><label className="form-field">Full name<input name="name" required minLength={2} defaultValue={dialog.record?.name || ""} /></label><label className="form-field">Age<input name="age" type="number" min="0" max="125" required defaultValue={dialog.record?.age ?? 45} /></label><label className="form-field">ZIP / postal code<input name="zip" required defaultValue={dialog.record?.zip || ""} /></label><label className="form-field">Phone<input name="phone" required defaultValue={dialog.record?.phone || ""} /></label><label className="form-field">Email<input name="email" type="email" defaultValue={dialog.record?.email || ""} /></label><label className="form-field">Risk level<select name="risk" defaultValue={dialog.record?.risk || "Low"}><option>Low</option><option>Moderate</option><option>High</option></select></label><label className="form-field">Conditions (comma-separated)<input name="conditions" defaultValue={dialog.record?.conditions?.join(", ") || ""} /></label><label className="form-field">Preferred channel<select name="preferredChannel" defaultValue={dialog.record?.preferredChannel || "SMS"}><option>SMS</option><option>Voice</option></select></label><label className="form-field">Outstanding balance ($)<input name="balance" type="number" min="0" step="0.01" defaultValue={dialog.record?.balance ?? 0} /></label><label className="form-field">Last encounter<input name="lastEncounter" defaultValue={dialog.record?.last || ""} /></label><label className="form-field">Next appointment<input name="nextAppointment" defaultValue={dialog.record?.next || ""} /></label></div><label className="form-check"><input type="checkbox" name="consent" defaultChecked={dialog.record?.consent !== false} /> Patient has consented to demo outreach</label>
+        </>}
+        {dialog.kind === "task" && <div className="form-grid"><label className="form-field wide-field">Task title<input name="title" required minLength={3} defaultValue={dialog.record?.title || ""} /></label><label className="form-field">Patient<select name="patientId" required defaultValue={dialog.record?.patientId || dialog.patientId || ""}><option value="">Select patient…</option>{patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.name} ({patient.externalId})</option>)}</select></label><label className="form-field">Category<input name="category" required defaultValue={dialog.record?.category || "Patient follow-up"} /></label><label className="form-field">Priority<select name="priority" defaultValue={dialog.record?.priority || "Medium"}><option>Low</option><option>Medium</option><option>High</option></select></label><label className="form-field">Assignee<select name="assigneeId" defaultValue={dialog.record?.assigneeId || ""}><option value="">Unassigned</option>{users.map((user) => <option key={user.id} value={user.id}>{user.name} · {user.role}</option>)}</select></label><label className="form-field">Due date<input name="dueDate" type="date" defaultValue={dateInput(dialog.record?.dueDate)} /></label>{dialog.record && <label className="form-field">Status<select name="status" defaultValue={dialog.record.status}><option>New</option><option>Assigned</option><option>In Progress</option><option>Waiting for Specialist</option><option>Completed</option><option>Cancelled</option></select></label>}<label className="form-field wide-field">Description<textarea name="description" rows={3} defaultValue={dialog.record?.description || ""} /></label></div>}
+        {dialog.kind === "referral" && <div className="form-grid"><label className="form-field">Patient<select name="patientId" required defaultValue={dialog.record?.patientId || dialog.patientId || ""}><option value="">Select patient…</option>{patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.name}</option>)}</select></label><label className="form-field">Specialty<input name="specialty" required defaultValue={dialog.record?.specialty || ""} /></label><label className="form-field">Priority<select name="priority" defaultValue={dialog.record?.priority || "Routine"}><option>Routine</option><option>Urgent</option><option>High</option></select></label><label className="form-field">Owner<input name="owner" required defaultValue={dialog.record?.owner || "Care Coordination"} /></label><label className="form-field wide-field">Reason<input name="reason" required minLength={3} defaultValue={dialog.record?.reason || ""} /></label><label className="form-field wide-field">Notes<textarea name="notes" rows={3} defaultValue={dialog.record?.notes || ""} /></label>{dialog.record && <label className="form-field">Status<select name="status" defaultValue={dialog.record.status}><option>Draft</option><option>Sent</option><option>Received</option><option>Appointment Scheduled</option><option>Appointment Completed</option><option>Feedback Received</option><option>Patient Unreachable</option><option>Closed</option></select></label>}</div>}
+        {dialog.kind === "carePlan" && <div className="form-grid"><label className="form-field">Patient<select name="patientId" required defaultValue={dialog.record?.patientId || dialog.patientId || ""}><option value="">Select patient…</option>{patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.name}</option>)}</select></label><label className="form-field">Condition<input name="condition" required defaultValue={dialog.record?.condition || ""} /></label><label className="form-field wide-field">Goals (separate with commas or new lines)<textarea name="goals" rows={3} defaultValue={dialog.record?.goals?.join(", ") || ""} /></label><label className="form-field wide-field">Activities (separate with commas or new lines)<textarea name="activities" rows={3} defaultValue={dialog.record?.activities?.join(", ") || ""} /></label><label className="form-field">Review date<input name="reviewDate" type="date" defaultValue={dateInput(dialog.record?.reviewDate)} /></label>{dialog.record && <label className="form-field">Status<select name="status" defaultValue={dialog.record.status}><option>Active</option><option>On Hold</option><option>Completed</option><option>Discontinued</option></select></label>}</div>}
+        {dialog.kind === "communication" && <div className="form-grid"><label className="form-field">Patient<select name="patientId" required defaultValue={dialog.record?.patientId || dialog.patientId || ""}><option value="">Select patient…</option>{patients.filter((patient) => patient.consent || dialog.record?.patientId === patient.id).map((patient) => <option key={patient.id} value={patient.id}>{patient.name}</option>)}</select></label><label className="form-field">Channel<select name="channel" defaultValue={dialog.record?.channel || "SMS"}><option>SMS</option><option>Voice</option></select></label><label className="form-field wide-field">Template<input name="template" required defaultValue={dialog.record?.template || "Care follow-up reminder"} /></label><label className="form-field wide-field">Message<textarea name="content" required rows={4} defaultValue={dialog.record?.content || ""} /></label>{dialog.record && <label className="form-field">Status<select name="status" defaultValue={dialog.record.status}><option>Draft</option><option>Queued</option><option>Sent</option><option>Delivered</option><option>Failed</option></select></label>}</div>}
+        {dialog.kind === "payment" && <div className="form-grid"><label className="form-field wide-field">Patient<select name="patientId" required defaultValue={dialog.patientId || ""}><option value="">Select patient…</option>{patients.filter((patient) => patient.balance > 0).map((patient) => <option key={patient.id} value={patient.id}>{patient.name + " · Balance $" + patient.balance.toFixed(2)}</option>)}</select></label><label className="form-field">Payment amount ($)<input name="amount" type="number" min="0.01" step="0.01" required /></label><label className="form-field">Reference<input name="reference" defaultValue={"DEMO-" + new Date().toISOString().slice(0, 10).replace(/-/g, "")} /></label><p className="form-hint wide-field">This creates a simulated payment only. The amount cannot exceed the selected patient’s current outstanding balance.</p></div>}
+        <div className="dialog-actions"><button type="button" className="secondary-button" disabled={saving} onClick={() => setDialog(null)}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : (dialog.record ? "Save changes" : dialog.kind === "payment" ? "Post payment" : "Save record")}</button></div>
+      </form>
+    </section></div>}
+
     {toast && <div className="toast"><span>✓</span>{toast}</div>}
     <div className="prototype-notice">RuralCare Connect is an independent demonstration prototype using synthetic data. Not a production EHR, medical device, or clinical decision-support system. Not affiliated with or endorsed by athenahealth.</div>
   </main>;
 }
-
-function PageTitle({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: React.ReactNode }) { return <div className="page-title"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1><p>{description}</p></div>{action}</div>; }
-function Dashboard({ patients, tasks, referrals, activity, highRisk, openRefs, overdue, onOpenPatient, onCompleteTask, onCreateTask }: { patients: Patient[]; tasks: Task[]; referrals: Referral[]; activity: Activity[]; highRisk: number; openRefs: number; overdue: number; onOpenPatient: (p: Patient) => void; onCompleteTask: (id: string) => void; onCreateTask: () => void }) {
-  const stats = [{ label: 'Patients needing follow-up', value: '18', change: '+12%', tone: 'purple', icon: '◷' }, { label: 'High-risk patients', value: highRisk, change: '3 overdue', tone: 'pink', icon: '⌁' }, { label: 'Open referrals', value: openRefs, change: '2 awaiting response', tone: 'blue', icon: '↗' }, { label: 'Tasks due today', value: overdue, change: '4 high priority', tone: 'yellow', icon: '✓' }];
-  return <><PageTitle eyebrow="Monday, November 20, 2026" title="Good morning, Priya" description="Here is what needs your attention across Montana Rural Health today." action={<button className="primary-button" onClick={onCreateTask}>＋ Create task</button>} />
-    <div className="stat-grid">{stats.map(s => <div className={`stat-card ${s.tone}`} key={s.label}><div className="stat-top"><span>{s.label}</span><b>{s.icon}</b></div><strong>{s.value}</strong><small>{s.change}</small></div>)}</div>
-    <div className="dashboard-grid"><section className="panel chart-panel"><div className="panel-heading"><div><h2>Care continuity overview</h2><p>Patient activity and care gaps</p></div><select><option>Last 30 days</option><option>Last 90 days</option></select></div><div className="chart"><div className="y-labels"><span>80</span><span>60</span><span>40</span><span>20</span><span>0</span></div><div className="chart-area"><div className="grid-lines" /> <svg viewBox="0 0 620 180" preserveAspectRatio="none"><path d="M0 145 C45 140 55 90 100 105 S150 128 190 75 S240 100 280 83 S335 60 370 90 S420 112 455 62 S510 78 540 38 S580 46 620 15" fill="none" stroke="#7447d9" strokeWidth="4"/><path d="M0 160 C50 150 80 153 120 130 S170 145 210 125 S255 131 300 112 S350 126 390 100 S430 110 470 88 S520 102 560 78 S600 86 620 68" fill="none" stroke="#2d9fbd" strokeWidth="3" strokeDasharray="7 7"/></svg><div className="x-labels"><span>Oct 22</span><span>Oct 29</span><span>Nov 5</span><span>Nov 12</span><span>Nov 19</span></div></div></div><div className="legend"><span><i className="purple-dot" /> Care activities completed</span><span><i className="blue-dot" /> Care gaps identified</span></div></section>
-      <section className="panel"><div className="panel-heading"><div><h2>Practice pulse</h2><p>Operational health indicators</p></div><button className="link-button">View analytics →</button></div><div className="pulse-row"><span>Referral closure rate</span><strong>72%</strong><div className="progress"><i style={{ width: '72%' }} /></div><small>+8% vs prior period</small></div><div className="pulse-row"><span>Patient outreach success</span><strong>84%</strong><div className="progress teal"><i style={{ width: '84%' }} /></div><small>+4% vs prior period</small></div><div className="pulse-row"><span>Care-gap closure</span><strong>61%</strong><div className="progress yellow"><i style={{ width: '61%' }} /></div><small>+11% vs prior period</small></div><div className="pulse-row"><span>Collection rate</span><strong>88%</strong><div className="progress pink"><i style={{ width: '88%' }} /></div><small>+3% vs prior period</small></div></section></div>
-    <div className="dashboard-grid lower"><section className="panel"><div className="panel-heading"><div><h2>Priority patients</h2><p>Patients with the highest coordination need</p></div><button className="link-button">View all →</button></div><table><thead><tr><th>Patient</th><th>Risk</th><th>Care gaps</th><th>Next action</th></tr></thead><tbody>{patients.filter(p => p.risk === 'High').slice(0, 4).map(p => <tr key={p.id} onClick={() => onOpenPatient(p)}><td><div className="patient-cell"><div className="avatar soft">{p.initials}</div><div><strong>{p.name}</strong><small>{p.id} · Age {p.age}</small></div></div></td><td><Pill tone="high">{p.risk}</Pill></td><td><strong>{p.gaps}</strong> overdue</td><td><span className="arrow">→</span> Review care plan</td></tr>)}</tbody></table></section><section className="panel"><div className="panel-heading"><div><h2>Recent activity</h2><p>Latest actions across the practice</p></div><button className="link-button">View audit →</button></div><div className="activity-list">{activity.slice(0, 4).map(a => <div className="activity" key={a.id}><div className={`activity-icon ${a.tone}`}>✦</div><div><strong>{a.action}</strong><span>{a.detail}</span><small>{a.time}</small></div></div>)}</div></section></div>
-    <section className="panel task-panel"><div className="panel-heading"><div><h2>Today&apos;s care team queue</h2><p>Tasks that need attention now</p></div><button className="link-button">Open work queue →</button></div><div className="task-list">{tasks.filter(t => t.status !== 'Completed').slice(0, 4).map(t => <div className="task-row" key={t.id}><button className="check" onClick={() => onCompleteTask(t.id)}>✓</button><div className="task-copy"><strong>{t.title}</strong><span>{t.patient} · {t.category}</span></div><Pill tone={t.priority.toLowerCase()}>{t.priority}</Pill><span className="task-due">{t.due}</span><button className="more">•••</button></div>)}</div></section>
-  </>;
-}
-
-function Patients({ patients, onOpen, onAdd }: { patients: Patient[]; onOpen: (p: Patient) => void; onAdd: () => void }) { return <><PageTitle eyebrow="Patient registry" title="Patients" description="Search and prioritize the people your practice serves." action={<button className="primary-button" onClick={onAdd}>＋ Add synthetic patient</button>} /><div className="filter-bar"><div className="inline-search">⌕ <input placeholder="Search by name, ID, condition..." /></div><button className="filter-button">Risk: All⌄</button><button className="filter-button">Coordinator: All⌄</button><button className="filter-button">More filters +</button></div><section className="panel"><div className="table-summary"><span>{patients.length} patients shown</span><button className="link-button">Export CSV ↓</button></div><table className="wide-table"><thead><tr><th>Patient</th><th>Risk</th><th>Conditions</th><th>Last encounter</th><th>Next action</th><th>Referral</th></tr></thead><tbody>{patients.map(p => <tr key={p.id} onClick={() => onOpen(p)}><td><div className="patient-cell"><div className="avatar soft">{p.initials}</div><div><strong>{p.name}</strong><small>{p.id} · Age {p.age} · {p.zip}</small></div></div></td><td><Pill tone={p.risk.toLowerCase()}>{p.risk}</Pill></td><td><div className="condition-list">{p.conditions.map(c => <span key={c}>{c}</span>)}</div></td><td>{p.last}</td><td>{p.next === 'Overdue' ? <Pill tone="high">{p.gaps} care gaps overdue</Pill> : p.next}</td><td>{p.referral}</td></tr>)}</tbody></table></section></>; }
-function Tasks({ tasks, filter, setFilter, onComplete, onCreate }: { tasks: Task[]; filter: string; setFilter: (v: string) => void; onComplete: (id: string) => void; onCreate: () => void }) { const visible = tasks.filter(t => filter === 'All' || t.status === filter); return <><PageTitle eyebrow="Care operations" title="Care team work queue" description="Coordinate follow-up across clinical and administrative teams." action={<button className="primary-button" onClick={onCreate}>＋ Create task</button>} /><div className="queue-tabs">{['All', 'New', 'In Progress', 'Waiting for Specialist', 'Completed'].map(x => <button className={filter === x ? 'selected' : ''} key={x} onClick={() => setFilter(x)}>{x}<span>{x === 'All' ? tasks.length : tasks.filter(t => t.status === x).length}</span></button>)}</div><section className="panel"><div className="table-summary"><span>{visible.length} tasks</span><div><button className="filter-button">Assignee: All⌄</button> <button className="filter-button">Due date⌄</button></div></div><table className="wide-table"><thead><tr><th>Task</th><th>Patient</th><th>Priority</th><th>Assignee</th><th>Due</th><th>Status</th><th /></tr></thead><tbody>{visible.map(t => <tr key={t.id}><td><strong>{t.title}</strong><small>{t.id} · {t.category}</small></td><td>{t.patient}</td><td><Pill tone={t.priority.toLowerCase()}>{t.priority}</Pill></td><td>{t.assignee}</td><td>{t.due}</td><td><Pill tone="blue">{t.status}</Pill></td><td>{t.status !== 'Completed' && <button className="small-action" onClick={() => onComplete(t.id)}>Complete</button>}</td></tr>)}</tbody></table></section></>; }
-function Referrals({ referrals, setReferrals, onNotify, onActivity, onAdvance }: { referrals: Referral[]; setReferrals: React.Dispatch<React.SetStateAction<Referral[]>>; onNotify: (s: string) => void; onActivity: (a: string, d: string) => void; onAdvance: (r: Referral) => void }) { const advance = (r: Referral) => { const next = r.status === 'Sent' ? 'Received' : r.status === 'Received' ? 'Appointment Scheduled' : r.status === 'Appointment Scheduled' ? 'Appointment Completed' : 'Feedback Received'; setReferrals(v => v.map(x => x.id === r.id ? { ...x, status: next, updated: 'Just now' } : x)); onActivity('Referral status updated', `${r.patient} · ${next}`); onNotify(`Referral moved to ${next}`); }; return <><PageTitle eyebrow="Closed-loop coordination" title="Referrals" description="Track every referral from request to specialist feedback." action={<button className="primary-button" onClick={() => onNotify('Referral creation form ready for synthetic data')}>＋ New referral</button>} /><div className="referral-summary"><div><span>Open referrals</span><strong>{referrals.filter(r => r.status !== 'Feedback Received').length}</strong></div><div><span>Awaiting response</span><strong>2</strong></div><div><span>Average turnaround</span><strong>8.4 days</strong></div><div><span>Closure rate</span><strong>72%</strong></div></div><section className="panel"><div className="table-summary"><span>Referral pipeline</span><button className="filter-button">All statuses⌄</button></div><table className="wide-table"><thead><tr><th>Referral</th><th>Specialty</th><th>Status</th><th>Priority</th><th>Owner</th><th>Updated</th><th /></tr></thead><tbody>{referrals.map(r => <tr key={r.id}><td><strong>{r.patient}</strong><small>{r.id}</small></td><td>{r.specialty}</td><td><Pill tone={r.status.includes('Feedback') ? 'green' : r.status.includes('Unreachable') ? 'high' : 'blue'}>{r.status}</Pill></td><td>{r.priority}</td><td>{r.owner}</td><td>{r.updated}</td><td><button className="small-action" onClick={() => onAdvance(r)}>Advance workflow</button></td></tr>)}</tbody></table></section></>; }
-function Chronic({ patients, onNotify }: { patients: Patient[]; onNotify: (s: string) => void }) { return <><PageTitle eyebrow="Clinical continuity" title="Chronic care" description="Review care plans and close overdue monitoring activities." action={<button className="primary-button" onClick={() => onNotify('Care plan creation form ready')}>＋ Create care plan</button>} /><div className="care-cards">{['Diabetes', 'Hypertension', 'Cardiovascular disease', 'Behavioral health'].map((x, i) => <div className="care-card" key={x}><div className="care-symbol">{['◒', '⌁', '♡', '✦'][i]}</div><span>{x}</span><strong>{[14, 21, 8, 6][i]}</strong><small>patients on pathway</small><div className="mini-bar"><i style={{ width: `${[61, 78, 48, 84][i]}%` }} /></div><small>{[61, 78, 48, 84][i]}% activity completion</small></div>)}</div><section className="panel"><div className="panel-heading"><div><h2>Patients needing clinical review</h2><p>Synthetic observations and overdue activities</p></div><button className="filter-button">All conditions⌄</button></div><table className="wide-table"><thead><tr><th>Patient</th><th>Condition</th><th>Last review</th><th>Open activities</th><th>Care plan</th><th /></tr></thead><tbody>{patients.filter(p => p.gaps > 0).map(p => <tr key={p.id}><td><strong>{p.name}</strong><small>{p.id}</small></td><td>{p.conditions[0]}</td><td>{p.last}</td><td><Pill tone="high">{p.gaps} overdue</Pill></td><td><Pill tone="green">Active</Pill></td><td><button className="small-action" onClick={() => onNotify(`Clinical review opened for ${p.name}`)}>Review</button></td></tr>)}</tbody></table></section></>; }
-function Engagement({ patients, onNotify, onActivity, onSend }: { patients: Patient[]; onNotify: (s: string) => void; onActivity: (a: string, d: string, tone?: string) => void; onSend: (p: Patient) => void }) { const [sent, setSent] = useState<string[]>([]); return <><PageTitle eyebrow="Patient connection" title="Patient engagement" description="Use low-bandwidth outreach to keep patients connected between visits." action={<button className="primary-button" onClick={() => onNotify('Message composer opened')}>＋ Compose message</button>} /><div className="engagement-top"><div className="metric-block"><span>Delivery rate</span><strong>94.2%</strong><small>+3.6% this month</small></div><div className="metric-block"><span>Response rate</span><strong>68.4%</strong><small>+8.2% this month</small></div><div className="metric-block"><span>Follow-ups created</span><strong>42</strong><small>from patient responses</small></div><div className="metric-block"><span>Failed attempts</span><strong>7</strong><small>requiring staff review</small></div></div><section className="panel"><div className="panel-heading"><div><h2>Outreach center</h2><p>Simulated SMS and voice communications</p></div><div className="channel-toggle"><button className="selected">SMS</button><button>Voice / IVR</button></div></div><table className="wide-table"><thead><tr><th>Patient</th><th>Template</th><th>Channel</th><th>Status</th><th>Last attempt</th><th /></tr></thead><tbody>{patients.slice(0, 5).map(p => <tr key={p.id}><td><strong>{p.name}</strong><small>{p.phone}</small></td><td>{p.gaps ? 'Care follow-up reminder' : 'Appointment reminder'}</td><td><Pill tone="blue">SMS</Pill></td><td><Pill tone={sent.includes(p.id) ? 'green' : 'neutral'}>{sent.includes(p.id) ? 'Sent' : 'Draft'}</Pill></td><td>{sent.includes(p.id) ? 'Just now' : 'Not sent'}</td><td><button className="small-action" onClick={() => { setSent(v => [...v, p.id]); onSend(p); onActivity('Patient outreach sent', `${p.name} · SMS reminder`, 'blue'); onNotify(`Simulated SMS queued for ${p.name}`); }}>Send simulation</button></td></tr>)}</tbody></table></section></>; }
-function Finance({ patients, onNotify, onPayment }: { patients: Patient[]; onNotify: (s: string) => void; onPayment: (p: Patient) => void }) { const total = patients.reduce((a, p) => a + p.balance, 0); return <><PageTitle eyebrow="Practice sustainability" title="Financial health" description="Connect continuity of care to operational and financial visibility." action={<button className="primary-button" onClick={() => onNotify('Payment entry form opened')}>＋ Record simulated payment</button>} /><div className="finance-grid"><div className="finance-card purple-bg"><span>Outstanding patient balances</span><strong>${total.toLocaleString()}</strong><small>Across {patients.filter(p => p.balance > 0).length} patients</small><div className="finance-orb">$</div></div><div className="finance-card"><span>Collection rate</span><strong>88.4%</strong><small className="positive">↑ 3.1% vs prior period</small><div className="progress"><i style={{ width: '88%' }} /></div></div><div className="finance-card"><span>Claim exceptions</span><strong>20</strong><small className="warning-text">6 need review today</small><div className="exception-bars"><i /><i /><i /><i /><i /><i /><i /><i /></div></div></div><section className="panel"><div className="panel-heading"><div><h2>Patient responsibility</h2><p>Synthetic balances and simulated transactions</p></div><button className="filter-button">All statuses⌄</button></div><table className="wide-table"><thead><tr><th>Patient</th><th>Balance</th><th>Payment plan</th><th>Last activity</th><th>Status</th><th /></tr></thead><tbody>{patients.filter(p => p.balance > 0).map(p => <tr key={p.id}><td><strong>{p.name}</strong><small>{p.id}</small></td><td><strong>${p.balance.toFixed(2)}</strong></td><td>{p.balance > 200 ? 'Available' : 'Not enrolled'}</td><td>Nov 18, 2026</td><td><Pill tone={p.balance > 300 ? 'high' : 'yellow'}>{p.balance > 300 ? 'Follow-up needed' : 'Open'}</Pill></td><td><button className="small-action" onClick={() => { onPayment(p); onNotify(`Simulated payment recorded for ${p.name}`); }}>Record payment</button></td></tr>)}</tbody></table></section></>; }
-function Analytics({ patients, tasks, referrals }: { patients: Patient[]; tasks: Task[]; referrals: Referral[] }) { return <><PageTitle eyebrow="Practice intelligence" title="Analytics" description="Understand where care coordination is working and where the team needs support." action={<button className="secondary-button">Export CSV ↓</button>} /><div className="analytics-grid"><div className="analytics-card"><span>Follow-up completion</span><strong>78%</strong><div className="spark purple-spark" /><small>+12% month over month</small></div><div className="analytics-card"><span>Referral closure rate</span><strong>72%</strong><div className="spark blue-spark" /><small>+8% month over month</small></div><div className="analytics-card"><span>Care-gap closure</span><strong>61%</strong><div className="spark yellow-spark" /><small>+11% month over month</small></div><div className="analytics-card"><span>Staff workload</span><strong>68%</strong><div className="spark pink-spark" /><small>Within healthy range</small></div></div><section className="panel"><div className="panel-heading"><div><h2>Operational trend</h2><p>Illustrative metrics from stored synthetic records</p></div><select><option>Last 6 months</option></select></div><div className="bar-chart">{[42, 56, 51, 68, 74, 82, 76, 91, 86, 96, 88, 100].map((h, i) => <div key={i} style={{ height: `${h}%` }}><span>{i % 2 === 0 ? h : ''}</span></div>)}</div><div className="chart-months"><span>Jun</span><span>Jul</span><span>Aug</span><span>Sep</span><span>Oct</span><span>Nov</span></div></section><div className="insight-row"><div className="insight"><span className="insight-icon purple">✦</span><div><strong>18 patients need follow-up</strong><p>{patients.filter(p => p.gaps > 0).length} currently have an identified care gap in the seeded dataset.</p></div></div><div className="insight"><span className="insight-icon yellow">!</span><div><strong>{tasks.filter(t => t.status !== 'Completed').length} open tasks</strong><p>Prioritize high-risk patients and overdue referral responses.</p></div></div><div className="insight"><span className="insight-icon blue">↗</span><div><strong>{referrals.length} referrals tracked</strong><p>Closed-loop visibility is available from request to feedback.</p></div></div></div></>; }
-function Administration({ onReset, onNotify }: { onReset: () => void; onNotify: (s: string) => void }) { return <><PageTitle eyebrow="System configuration" title="Administration" description="Configure the synthetic demo environment and review access." action={<button className="primary-button" onClick={onReset}>↻ Reset demo data</button>} /><div className="admin-grid"><section className="panel"><div className="panel-heading"><div><h2>Demo users</h2><p>Role-based personas available for walkthroughs</p></div><button className="link-button" onClick={() => onNotify('User invite flow is simulated')}>＋ Add user</button></div>{roles.map((r, i) => <div className="admin-row" key={r}><div className="avatar soft">{initials(r)}</div><div><strong>{['Priya Anand', 'Dr. Sarah Kim', 'Maya Patel', 'Jordan Lee', 'Dr. Michael Ross', 'System Admin'][i]}</strong><small>{r}</small></div><Pill tone="green">Active</Pill><button className="more">•••</button></div>)}</section><section className="panel"><div className="panel-heading"><div><h2>Integration simulators</h2><p>All external connections are mocked</p></div></div>{['EHR / FHIR adapter', 'Referral document exchange', 'SMS / voice provider', 'Claims status adapter'].map((x, i) => <div className="integration-row" key={x}><span className="integration-icon">{['⌘', '↗', '✉', '$'][i]}</span><div><strong>{x}</strong><small>Simulated · Correlation IDs enabled</small></div><Pill tone="green">Healthy</Pill></div>)}</section></div></>; }
-function Audit({ activity }: { activity: Activity[] }) { return <><PageTitle eyebrow="Traceability" title="Audit history" description="Review synthetic activity across patients, workflows and integrations." action={<button className="secondary-button">Export audit CSV ↓</button>} /><section className="panel"><div className="filter-bar compact"><button className="filter-button">All actors⌄</button><button className="filter-button">All entities⌄</button><button className="filter-button">Date range⌄</button></div><div className="audit-list">{activity.concat([{ id: '5', action: 'Demo session started', detail: 'Priya Anand · Practice Administrator', time: 'Today, 8:42 AM', tone: 'blue' }]).map((a, i) => <div className="audit-row" key={`${a.id}-${i}`}><div className={`activity-icon ${a.tone}`}>✦</div><div><strong>{a.action}</strong><span>{a.detail}</span></div><time>{a.time}</time><button className="more">•••</button></div>)}</div></section></>; }
-function PatientDrawer({ patient, onClose, onTask }: { patient: Patient; onClose: () => void; onTask: () => void }) { return <div className="drawer-backdrop" onClick={onClose}><aside className="drawer" onClick={e => e.stopPropagation()}><div className="drawer-head"><span>Patient 360</span><button onClick={onClose}>×</button></div><div className="drawer-profile"><div className="avatar large">{patient.initials}</div><div><h2>{patient.name}</h2><p>{patient.id} · Age {patient.age} · ZIP {patient.zip}</p></div><Pill tone={patient.risk.toLowerCase()}>{patient.risk} risk</Pill></div><div className="drawer-actions"><button className="primary-button" onClick={onTask}>＋ Create task</button><button className="secondary-button">Send outreach</button></div><div className="drawer-section"><h3>Clinical summary</h3><div className="detail-grid"><span>Conditions<strong>{patient.conditions.join(', ')}</strong></span><span>Last encounter<strong>{patient.last}</strong></span><span>Next appointment<strong className={patient.next === 'Overdue' ? 'danger-text' : ''}>{patient.next}</strong></span><span>Coordinator<strong>{patient.coordinator}</strong></span></div></div><div className="drawer-section"><h3>Care gaps <Pill tone="high">{patient.gaps} overdue</Pill></h3><div className="gap-item"><span className="gap-icon">!</span><div><strong>Monitoring activity overdue</strong><small>Needs care team follow-up</small></div><span>→</span></div><div className="gap-item"><span className="gap-icon blue">↗</span><div><strong>{patient.referral}</strong><small>Referral workflow</small></div><span>→</span></div></div><div className="drawer-section"><h3>Recent activity</h3>{['Care gap identified · Today', 'Patient contacted · Yesterday', 'Encounter completed · Nov 12'].map(x => <div className="timeline-item" key={x}><i /><span>{x}</span></div>)}</div></aside></div>; }

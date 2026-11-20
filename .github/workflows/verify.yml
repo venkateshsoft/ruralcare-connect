@@ -1,0 +1,47 @@
+name: Verify RuralCare Connect
+on:
+  push:
+    branches:
+      - main
+      - "fix/**"
+  pull_request:
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ruralcare
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ruralcare"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ruralcare?schema=public
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/ruralcare?schema=public
+      NEXT_TELEMETRY_DISABLED: "1"
+      ENABLE_DEMO_RESET: "true"
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Type-check
+        run: npm run lint
+      - name: Push Prisma schema
+        run: npm run db:push
+      - name: Seed synthetic demo records
+        run: npm run db:seed
+      - name: Build Next.js application
+        run: npm run build
