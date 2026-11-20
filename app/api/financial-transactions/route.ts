@@ -29,7 +29,7 @@ export async function POST(request: Request) {
       await db.patient.update({ where: { id: data.patientId }, data: { balance: { decrement: data.amount } } });
       return { transaction };
     });
-    if ("error" in result) return badRequest(result.error, result.error === "Patient not found" ? 404 : 400);
+    if (result.error) return badRequest(result.error, result.error === "Patient not found" ? 404 : 400);
     await writeAudit("Payment posted", "FinancialTransaction", result.transaction.id, "$" + result.transaction.amount.toFixed(2) + " posted for " + result.transaction.patient.name);
     return Response.json(result.transaction, { status: 201 });
   } catch (error) { return serverError(error); }
