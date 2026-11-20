@@ -23,7 +23,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       if (!wasPosted && willBePosted) await db.patient.update({ where: { id: prior.patientId }, data: { balance: { decrement: prior.amount } } });
       return { transaction: updated };
     });
-    if ("error" in result) return badRequest(result.error, result.error === "Transaction not found" ? 404 : 400);
+    if (result.error) return badRequest(result.error, result.error === "Transaction not found" ? 404 : 400);
     await writeAudit("Payment status updated", "FinancialTransaction", id, "Transaction status changed to " + result.transaction.status);
     return Response.json(result.transaction);
   } catch (error) { return serverError(error); }
@@ -41,7 +41,7 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
       await db.financialTransaction.delete({ where: { id } });
       return { item };
     });
-    if ("error" in result) return badRequest(result.error, 404);
+    if (result.error) return badRequest(result.error, 404);
     await writeAudit("Transaction deleted", "FinancialTransaction", id, "Transaction " + result.item.reference + " deleted");
     return Response.json({ success: true });
   } catch (error) { return serverError(error); }
