@@ -20,7 +20,7 @@ const demoPatients = [
 
 export async function seedDemoData(reset = false) {
   await prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(22112233)`;
+    await tx.$queryRaw`SELECT 'locked'::text AS lock_result FROM (SELECT pg_advisory_xact_lock(22112233)) AS lock_guard`;
     if (!reset && await tx.patient.count() > 0) return;
 
     if (reset) {
