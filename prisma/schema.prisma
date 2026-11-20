@@ -1,0 +1,125 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String      @id @default(cuid())
+  name      String
+  role      String
+  active    Boolean     @default(true)
+  tasks     Task[]
+  audits    AuditEvent[]
+  createdAt DateTime    @default(now())
+}
+
+model Patient {
+  id           String          @id @default(cuid())
+  externalId   String          @unique
+  name         String
+  initials     String
+  dateOfBirth  DateTime?
+  age          Int
+  zip          String
+  phone        String
+  email        String?
+  conditions   String
+  allergies    String?
+  medications  String?
+  risk         String          @default("Low")
+  lastEncounter String?
+  nextAppointment String?
+  preferredChannel String       @default("SMS")
+  consent      Boolean         @default(true)
+  balance      Float           @default(0)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  tasks        Task[]
+  referrals    Referral[]
+  carePlans    CarePlan[]
+  communications Communication[]
+  transactions FinancialTransaction[]
+}
+
+model Task {
+  id          String   @id @default(cuid())
+  externalId  String   @unique
+  title       String
+  description String?
+  category    String
+  priority    String   @default("Medium")
+  status      String   @default("New")
+  dueDate     DateTime?
+  escalation  Boolean  @default(false)
+  patientId   String
+  assigneeId  String?
+  patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  assignee    User?    @relation(fields: [assigneeId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Referral {
+  id          String   @id @default(cuid())
+  externalId  String   @unique
+  specialty   String
+  reason      String
+  priority    String   @default("Routine")
+  status      String   @default("Draft")
+  owner       String
+  notes       String?
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  patientId   String
+  patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+}
+
+model CarePlan {
+  id          String   @id @default(cuid())
+  condition   String
+  status      String   @default("Active")
+  reviewDate  DateTime?
+  goals       String
+  activities  String
+  patientId   String
+  patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Communication {
+  id        String   @id @default(cuid())
+  channel   String
+  template  String
+  status    String   @default("Draft")
+  content   String
+  patientId String
+  patient   Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+model FinancialTransaction {
+  id        String   @id @default(cuid())
+  kind      String
+  amount    Float
+  status    String   @default("Pending")
+  reference String
+  patientId String
+  patient   Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+model AuditEvent {
+  id        String   @id @default(cuid())
+  action    String
+  entity    String
+  entityId  String
+  detail    String
+  actorId   String?
+  actor     User?    @relation(fields: [actorId], references: [id])
+  createdAt DateTime @default(now())
+}
